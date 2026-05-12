@@ -4,49 +4,63 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from dotenv import load_dotenv
+
+# 載入功能模組 (這些檔案您稍後會建立在 modules/ 資料夾中)
 from modules.user_state import UserState
-from modules.wishlist import view_wishlist, add_to_wishlist
+from modules.wishlist import add_to_wishlist, view_wishlist
 from modules.product_query import handle_product_query
 
-load_dotenv() [cite: 18]
+# 載入 .env 檔案（本地測試用）
+load_dotenv()
 
-app = Flask(__name__) [cite: 19]
+app = Flask(__name__)
 
-# 初始化 Line Bot 配置 [cite: 21]
-line_bot_api = LineBotApi(os.environ.get('LINE_CHANNEL_ACCESS_TOKEN'))
-handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
+# 從環境變數取得金鑰
+line_bot_api = LineBotApi(os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
+handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
 
-user_states = {} # 存儲用戶狀態 [cite: 29]
+# 用於儲存每個用戶的對話狀態
+user_states = {}
 
 @app.route("/callback", methods=['POST'])
 def callback():
-    signature = request.headers['X-Line-Signature'] [cite: 23]
-    body = request.get_data(as_text=True) [cite: 25]
+    # 驗證 LINE 的簽章
+    signature = request.headers['X-Line-Signature']
+    body = request.get_data(as_text=True)
     try:
-        handler.handle(body, signature) [cite: 26]
+        handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
     return 'OK'
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    user_id = event.source.user_id [cite: 28]
-    text = event.message.text.strip()
+    user_id = event.source.user_id
+    user_input = event.message.text.strip()
 
-    # 初始化狀態機 [cite: 29]
+    # 初始化用戶狀態
     if user_id not in user_states:
         user_states[user_id] = UserState()
     
-    user_state = user_states[user_id]
+    state = user_states[user_id]
 
-    # 處理指令 [cite: 31]
-    if text == "查看願望清單":
-        view_wishlist(line_bot_api, event.reply_token, user_id)
-    elif text.startswith("添加到願望清單:"):
-        add_to_wishlist(line_bot_api, event.reply_token, user_id, text)
+    # 1. 處理願望清單功能
+    if user_input == "查看願望清單":
+        response_text = view_wishlist(user_id)
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=response_text))
+    
+    elif user_input.startswith("加入清單:"):
+        product_name = user_input.replace("加入清單:", "").strip()
+        response_text = add_to_wishlist(user_id, product_name)
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=response_text))
+
+    # 2. 處理 3C 產品查詢 (呼叫 OpenAI GPT-4.1)
     else:
-        # 預設進行產品查詢 [cite: 129]
-        handle_product_query(line_bot_api, event.reply_token, text)
+        # 顯示「處理中」狀態，增加使用者體驗
+        reply_content = handle_product_query(user_input)
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_content))
 
 if __name__ == "__main__":
-    app.run()
+    # Render 部署時會自動使用 port 5000 或環境變數指定的 port
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
