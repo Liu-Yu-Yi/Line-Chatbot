@@ -1,4 +1,4 @@
-# LINE Bot 3C 助手
+# Line-Chatbot
 
 這是一個基於 LINE Messaging API 和 OpenAI API 的 LINE Bot 應用，提供 3C 產品諮詢、價格查詢和購物車功能。
 
